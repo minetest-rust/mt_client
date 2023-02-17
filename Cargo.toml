@@ -7,5 +7,5 @@ edition = "2021"
 mt_net = { git = "https://github.com/minetest-rust/mt_net", version = "0.1.0", features = ["conn", "client"] }
 rand = "0.8.5"
 sha2 = "0.10.6"
-srp = "0.6.0"
+srp = { git = "https://github.com/minetest-rust/PAKEs.git", version = "0.6.0" }
 tokio = { version = "1.25.0", features = ["rt", "rt-multi-thread"] }
