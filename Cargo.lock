@@ -576,7 +576,7 @@ dependencies = [
 [[package]]
 name = "srp"
 version = "0.6.0"
-source = "git+https://github.com/minetest-rust/PAKEs.git#d597c62367000e00125ed5aa376ba268717da69a"
+source = "git+https://github.com/minetest-rust/PAKEs.git#de080a45f1b186352fd79ba69149d2ba988777bc"
 dependencies = [
  "digest",
  "generic-array",
