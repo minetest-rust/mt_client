@@ -1,11 +1,22 @@
 [package]
-name = "hydra"
+name = "mt_client"
 version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-mt_net = { git = "https://github.com/minetest-rust/mt_net", version = "0.1.0", features = ["conn", "client"] }
+bytemuck = { version = "1.13.0", features = ["derive"] }
+cgmath = "0.17.0"
+fps-camera = "0.1.2"
+futures = { version = "0.3.26" }
+guillotiere = "0.6.2"
+image = { version = "0.24.5", features = ["jpeg", "png", "bmp", "tga"], default-features = false }
+lerp = "0.4.0"
+mt_net = { git = "https://github.com/minetest-rust/mt_net", features = ["conn", "client"] }
 rand = "0.8.5"
+rust-embed = "6.4.2"
 sha2 = "0.10.6"
-srp = { git = "https://github.com/minetest-rust/PAKEs.git", version = "0.6.0" }
-tokio = { version = "1.25.0", features = ["rt", "rt-multi-thread"] }
+srp = { git = "https://github.com/minetest-rust/PAKEs.git" }
+threadpool = "1.8.1"
+tokio = { version = "1.25.0", features = ["rt", "rt-multi-thread", "signal"] }
+wgpu = "0.15.1"
+winit = "0.28.1"
