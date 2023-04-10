@@ -22,11 +22,6 @@ pub async fn run(
         .build(&event_loop)
         .unwrap();
 
-    window
-        .set_cursor_grab(CursorGrabMode::Locked)
-        .or_else(|_e| window.set_cursor_grab(CursorGrabMode::Confined))
-        .unwrap();
-
     window.set_cursor_visible(false);
 
     let mut state = state::State::new(&window).await;
@@ -36,6 +31,8 @@ pub async fn run(
     let mut nodedefs = None;
 
     let mut last_frame = Instant::now();
+
+    let mut game_paused = false;
 
     event_loop.run_return(move |event, _, flow| match event {
         MainEventsCleared => window.request_redraw(),
@@ -78,21 +75,28 @@ pub async fn run(
                 ..
             } => {
                 use fps_camera::Actions;
-                use winit::event::{ElementState::*, VirtualKeyCode as Key};
+                use winit::event::{ElementState, VirtualKeyCode as Key};
 
-                let actions = match key {
-                    Key::W => Actions::MOVE_FORWARD,
-                    Key::A => Actions::STRAFE_LEFT,
-                    Key::S => Actions::MOVE_BACKWARD,
-                    Key::D => Actions::STRAFE_RIGHT,
-                    Key::Space => Actions::FLY_UP,
-                    Key::LShift => Actions::FLY_DOWN,
-                    _ => Actions::empty(),
-                };
+                if key == &Key::Escape && key_state == &ElementState::Pressed {
+                    game_paused = !game_paused;
+                    window.set_cursor_visible(game_paused);
+                }
 
-                match key_state {
-                    Pressed => state.camera.enable_actions(actions),
-                    Released => state.camera.disable_action(actions),
+                if !game_paused {
+                    let actions = match key {
+                        Key::W => Actions::MOVE_FORWARD,
+                        Key::A => Actions::STRAFE_LEFT,
+                        Key::S => Actions::MOVE_BACKWARD,
+                        Key::D => Actions::STRAFE_RIGHT,
+                        Key::Space => Actions::FLY_UP,
+                        Key::LShift => Actions::FLY_DOWN,
+                        _ => Actions::empty(),
+                    };
+
+                    match key_state {
+                        ElementState::Pressed => state.camera.enable_actions(actions),
+                        ElementState::Released => state.camera.disable_action(actions),
+                    }
                 }
             }
             _ => {}
@@ -101,13 +105,15 @@ pub async fn run(
             event: MouseMotion { delta },
             ..
         } => {
-            state.camera.update_mouse(delta.0 as f32, delta.1 as f32);
-            window
-                .set_cursor_position(winit::dpi::PhysicalPosition::new(
-                    state.config.width / 2,
-                    state.config.height / 2,
-                ))
-                .ok();
+            if !game_paused {
+                state.camera.update_mouse(delta.0 as f32, delta.1 as f32);
+                window
+                    .set_cursor_position(winit::dpi::PhysicalPosition::new(
+                        state.config.width / 2,
+                        state.config.height / 2,
+                    ))
+                    .ok();
+            }
         }
         UserEvent(event) => match event {
             Close => *flow = ExitWithCode(0),

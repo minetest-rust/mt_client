@@ -3,6 +3,12 @@ name = "mt_client"
 version = "0.1.0"
 edition = "2021"
 
+[profile.dev]
+opt-level = 1
+
+[profile.dev.package."*"]
+opt-level = 3
+
 [dependencies]
 bytemuck = { version = "1.13.0", features = ["derive"] }
 cgmath = "0.17.0"
