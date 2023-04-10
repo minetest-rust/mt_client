@@ -19,11 +19,12 @@ pub struct MapRender {
 struct Vertex {
     pos: [f32; 3],
     tex_coords: [f32; 2],
+    light: f32,
 }
 
 impl Vertex {
-    const ATTRIBS: [wgpu::VertexAttribute; 2] =
-        wgpu::vertex_attr_array![0 => Float32x3, 1 => Float32x2];
+    const ATTRIBS: [wgpu::VertexAttribute; 3] =
+        wgpu::vertex_attr_array![0 => Float32x3, 1 => Float32x2, 2 => Float32];
 
     fn desc<'a>() -> wgpu::VertexBufferLayout<'a> {
         wgpu::VertexBufferLayout {
@@ -62,11 +63,20 @@ impl MapRender {
             };
 
             use lerp::Lerp;
-            use mt_net::DrawType;
+            use mt_net::{DrawType, Param1Type};
             use std::array::from_fn as array;
 
             match def.draw_type {
-                DrawType::Cube => {
+                DrawType::Cube | DrawType::AllFaces | DrawType::AllFacesOpt => {
+                    let light = match def.param1_type {
+                        Param1Type::Light => {
+                            println!("{}", block.param_1[index]);
+
+                            block.param_1[index] as f32 / 15.0
+                        }
+                        _ => 1.0,
+                    };
+
                     let pos: [i16; 3] = array(|i| ((index >> (4 * i)) & 0xf) as i16);
                     for (f, face) in CUBE.iter().enumerate() {
                         let dir = FACE_DIR[f];
@@ -98,6 +108,7 @@ impl MapRender {
                             vertices.push(Vertex {
                                 pos: array(|i| pos[i] as f32 - 8.5 + vertex.0[i]),
                                 tex_coords: array(|i| rect[i].start.lerp(rect[i].end, vertex.1[i])),
+                                light,
                             })
                         }
                     }
