@@ -1,1 +1,5 @@
 /target
+config.yml
+/flamegraph.svg
+/perf.data
+/perf.data.old
