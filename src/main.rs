@@ -35,12 +35,16 @@ fn main() {
         .build()
         .unwrap();
 
-    let net_thread = runtime.spawn(net::run(event_loop_proxy, net_rx));
+    let net_thread = runtime.spawn(net::run(event_loop_proxy.clone(), net_rx));
+    let net_recover_thread = std::thread::spawn(move || {
+        runtime.block_on(net_thread).ok();
+        event_loop_proxy.send_event(GfxEvent::Close).ok(); // tell graphics to shut down
+    });
 
     // graphics code is pseudo async: the winit event loop is blocking
     // so we can't really use async capabilities
     futures::executor::block_on(gfx::run(event_loop, net_tx));
 
     // wait for net to finish
-    runtime.block_on(net_thread).unwrap();
+    net_recover_thread.join().unwrap();
 }

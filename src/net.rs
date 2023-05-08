@@ -117,7 +117,6 @@ pub(crate) async fn run(
         }
     }
 
-    conn.events.send_event(GfxEvent::Close).ok(); // TODO: make sure to send this on panic
     worker_thread.await.unwrap();
 }
 
