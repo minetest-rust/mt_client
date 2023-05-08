@@ -1082,7 +1082,7 @@ dependencies = [
 [[package]]
 name = "mt_net"
 version = "0.1.0"
-source = "git+https://github.com/minetest-rust/mt_net#2bf4f75254ddfca9ef13c6a1b2a8e6210f298ab5"
+source = "git+https://github.com/minetest-rust/mt_net#ea1983ec93aa6db9dc2486713a6d974aaf3780e0"
 dependencies = [
  "async-trait",
  "cgmath",

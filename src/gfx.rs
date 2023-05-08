@@ -6,7 +6,6 @@ use winit::{
     event::{DeviceEvent::*, Event::*, WindowEvent::*},
     event_loop::ControlFlow::ExitWithCode,
     platform::run_return::EventLoopExtRunReturn,
-    window::CursorGrabMode,
 };
 
 mod map;
@@ -106,7 +105,7 @@ pub async fn run(
             ..
         } => {
             if !game_paused {
-                state.camera.update_mouse(delta.0 as f32, delta.1 as f32);
+                state.camera.update_mouse(-delta.0 as f32, delta.1 as f32);
                 window
                     .set_cursor_position(winit::dpi::PhysicalPosition::new(
                         state.config.width / 2,

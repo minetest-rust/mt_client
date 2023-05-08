@@ -177,10 +177,17 @@ impl State {
     }
 
     pub fn update(&mut self, dt: Duration) {
-        let cam = self.camera.camera(dt.as_secs_f32());
-        self.camera.position = cam.position;
-        self.view = Matrix4::from(cam.orthogonal());
+        self.camera.yaw += Rad::from(Deg(180.0)).0;
+        self.camera.yaw *= -1.0;
 
+        let cam = self.camera.camera(dt.as_secs_f32());
+
+        self.camera.yaw *= -1.0;
+        self.camera.yaw -= Rad::from(Deg(180.0)).0;
+
+        self.camera.position = cam.position;
+
+        self.view = Matrix4::from(cam.orthogonal());
         self.camera_uniform.set(&self.queue, self.proj * self.view);
     }
 
