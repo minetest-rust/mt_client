@@ -4,10 +4,14 @@ mod mesh;
 use super::{media::MediaMgr, state::State, util::MatrixUniform};
 use atlas::create_atlas;
 use cgmath::{prelude::*, Matrix4, Point3, Vector3};
-use mesh::create_mesh;
+use mesh::{create_mesh, MeshData};
 use mt_net::{MapBlock, NodeDef};
 use serde::{Deserialize, Serialize};
-use std::{collections::HashMap, sync::Arc};
+use std::{
+    collections::HashMap,
+    ops::DerefMut,
+    sync::{Arc, Mutex},
+};
 use wgpu::util::DeviceExt;
 
 #[derive(Serialize, Deserialize, PartialEq, Eq, Copy, Clone, Debug)]
@@ -43,13 +47,17 @@ struct MeshMakeInfo {
     nodes: [Option<Box<NodeDef>>; u16::MAX as usize + 1],
 }
 
+type MeshQueue = HashMap<Point3<i16>, MeshData>;
+
 pub struct MapRender {
     pipeline: wgpu::RenderPipeline,
     atlas: wgpu::BindGroup,
     model: wgpu::BindGroupLayout,
     blocks: HashMap<[i16; 3], BlockModel>,
     mesh_make_info: Arc<MeshMakeInfo>,
-    mesh_data_buffer: usize,
+    mesh_data_buffer: Mutex<usize>,
+    queue_consume: MeshQueue,
+    queue_produce: Arc<Mutex<MeshQueue>>,
 }
 
 #[repr(C)]
@@ -157,31 +165,41 @@ impl MapRender {
         }
     }
 
-    pub fn add_block(&mut self, state: &mut State, pos: Point3<i16>, block: Box<MapBlock>) {
+    pub fn update(&mut self, state: &mut State) {
+        std::mem::swap(
+            self.queue_produce.lock().unwrap().deref_mut(),
+            &mut self.queue_consume,
+        );
+        for (pos, data) in self.queue_consume.drain() {
+            self.blocks.insert(
+                pos.into(),
+                BlockModel {
+                    mesh: BlockMesh::new(state, &data.vertices),
+                    mesh_blend: BlockMesh::new(state, &data.vertices_blend),
+                    transform: MatrixUniform::new(
+                        &state.device,
+                        &self.model,
+                        Matrix4::from_translation(
+                            block_float_pos(pos.to_vec()) + Vector3::new(8.5, 8.5, 8.5),
+                        ),
+                        "mapblock",
+                        false,
+                    ),
+                },
+            );
+        }
+    }
+
+    pub fn add_block(&self, pos: Point3<i16>, block: Box<MapBlock>) {
         let (pos, data) = create_mesh(
-            &mut self.mesh_data_buffer,
+            &mut self.mesh_data_buffer.lock().unwrap(),
             self.mesh_make_info.clone(),
             &Default::default(),
             pos,
             block,
         );
 
-        self.blocks.insert(
-            pos.into(),
-            BlockModel {
-                mesh: BlockMesh::new(state, &data.vertices),
-                mesh_blend: BlockMesh::new(state, &data.vertices_blend),
-                transform: MatrixUniform::new(
-                    &state.device,
-                    &self.model,
-                    Matrix4::from_translation(
-                        block_float_pos(pos.to_vec()) + Vector3::new(8.5, 8.5, 8.5),
-                    ),
-                    "mapblock",
-                    false,
-                ),
-            },
-        );
+        self.queue_produce.lock().unwrap().insert(pos, data);
     }
 
     pub fn new(state: &mut State, media: &MediaMgr, mut nodes: HashMap<u16, NodeDef>) -> Self {
@@ -342,10 +360,12 @@ impl MapRender {
                 nodes: std::array::from_fn(|i| nodes.get(&(i as u16)).cloned().map(Box::new)),
                 textures: atlas_slices,
             }),
-            mesh_data_buffer: 16384,
+            mesh_data_buffer: Mutex::new(0),
             atlas: atlas_bind_group,
             model: model_bind_group_layout,
             blocks: HashMap::new(),
+            queue_consume: HashMap::new(),
+            queue_produce: Arc::new(Mutex::new(HashMap::new())),
         }
     }
 }

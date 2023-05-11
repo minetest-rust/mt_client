@@ -24,7 +24,7 @@ pub async fn run(
     window.set_cursor_visible(false);
 
     let mut state = state::State::new(&window).await;
-    let mut map = None;
+    let mut map: Option<map::MapRender> = None;
     let mut media = media::MediaMgr::new();
 
     let mut nodedefs = None;
@@ -41,6 +41,10 @@ pub async fn run(
             last_frame = now;
 
             state.update(dt);
+            if let Some(map) = &mut map {
+                map.update(&mut state);
+            }
+
             net_events
                 .send(NetEvent::PlayerPos(
                     state.camera.position.into(),
@@ -118,8 +122,8 @@ pub async fn run(
             Close => *flow = ExitWithCode(0),
             NodeDefs(defs) => nodedefs = Some(defs),
             MapBlock(pos, blk) => {
-                if let Some(map) = map.as_mut() {
-                    map.add_block(&mut state, pos, blk);
+                if let Some(map) = &map {
+                    map.add_block(pos, blk);
                 }
             }
             Media(files, finished) => {
