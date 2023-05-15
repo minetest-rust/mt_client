@@ -24,13 +24,13 @@ impl MeshData {
 pub(super) fn create_mesh(
     mkinfo: &MeshgenInfo,
     settings: &MapRenderSettings,
-    pos: Point3<i16>,
+    _pos: Point3<i16>,
     block: &MapBlock,
     nbors: [Option<&MapBlock>; 6],
     buffer: &mut MeshData,
 ) {
-    for (index, content) in block.param_0.iter().enumerate() {
-        let def = match &mkinfo.nodes[*content as usize] {
+    for (index, &content) in block.param_0.iter().enumerate() {
+        let def = match &mkinfo.nodes[content as usize] {
             Some(x) => x,
             None => continue,
         };
@@ -62,29 +62,42 @@ pub(super) fn create_mesh(
             _ => 1.0,
         };
 
+        let vertices = if def.alpha == mt_net::Alpha::Blend {
+            &mut buffer.vertices_blend
+        } else {
+            &mut buffer.vertices
+        };
+
         let pos: [i16; 3] = array(|i| ((index >> (4 * i)) & 0xf) as i16);
 
         for (f, face) in CUBE.iter().enumerate() {
-            let c = [1, 1, 0, 0, 2, 2][f];
+            if draw_type == DrawType::Cube || draw_type == DrawType::Liquid {
+                let c = [1, 1, 0, 0, 2, 2][f];
 
-            let mut nblk = block;
-            let mut npos = pos;
-            npos[c] += FACE_DIR[f][c];
+                let mut nblk = block;
+                let mut npos = pos;
+                npos[c] += FACE_DIR[f][c];
 
-            if !(0..16).contains(&npos[c]) {
-                nblk = match nbors[f].as_ref() {
-                    Some(x) => x,
-                    None => continue,
-                };
+                if !(0..16).contains(&npos[c]) {
+                    nblk = match nbors[f].as_ref() {
+                        Some(x) => x,
+                        None => continue,
+                    };
 
-                npos[c] = (npos[c] + 16) % 16;
-            }
+                    npos[c] = (npos[c] + 16) % 16;
+                }
 
-            let nidx = npos[0] | (npos[1] << 4) | (npos[2] << 8);
+                let nidx = npos[0] | (npos[1] << 4) | (npos[2] << 8);
+                let ncontent = nblk.param_0[nidx as usize];
 
-            if let Some(ndef) = &mkinfo.nodes[nblk.param_0[nidx as usize] as usize] {
-                if ndef.draw_type == DrawType::Cube {
-                    continue;
+                if let Some(ndef) = &mkinfo.nodes[ncontent as usize] {
+                    if match draw_type {
+                        DrawType::Cube => ndef.draw_type == DrawType::Cube,
+                        DrawType::Liquid => ncontent == content,
+                        _ => false,
+                    } {
+                        continue;
+                    }
                 }
             }
 
@@ -92,7 +105,7 @@ pub(super) fn create_mesh(
             let texture = mkinfo.textures[tile.texture.custom].cube_tex_coords[f];
 
             let mut add_vertex = |vertex: (usize, &([f32; 3], [f32; 2]))| {
-                buffer.vertices.push(Vertex {
+                vertices.push(Vertex {
                     pos: array(|i| pos[i] as f32 + vertex.1 .0[i]),
                     tex_coords: texture[vertex.0],
                     light,
@@ -100,9 +113,9 @@ pub(super) fn create_mesh(
             };
 
             face.iter().enumerate().for_each(&mut add_vertex);
-            /*if !backface_cull {
+            if !tile.flags.contains(mt_net::TileFlag::BackfaceCull) {
                 face.iter().enumerate().rev().for_each(&mut add_vertex);
-            }*/
+            }
         }
     }
 }
