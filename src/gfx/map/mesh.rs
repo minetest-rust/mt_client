@@ -1,8 +1,6 @@
-use super::{LeavesMode, MapRenderSettings, MeshMakeInfo, Vertex, CUBE};
+use super::{LeavesMode, MapRenderSettings, MeshgenInfo, Vertex, CUBE};
 use cgmath::Point3;
 use mt_net::MapBlock;
-use std::ops::Deref;
-use std::sync::Arc;
 
 #[derive(Clone)]
 pub(super) struct MeshData {
@@ -24,15 +22,12 @@ impl MeshData {
 }
 
 pub(super) fn create_mesh(
-    buffer_cap: &mut usize,
-    mkinfo: Arc<MeshMakeInfo>,
+    mkinfo: &MeshgenInfo,
     settings: &MapRenderSettings,
     pos: Point3<i16>,
     block: Box<MapBlock>,
-) -> (Point3<i16>, MeshData) {
-    let mkinfo = mkinfo.deref();
-    let mut buffer = MeshData::new(*buffer_cap);
-
+    buffer: &mut MeshData,
+) {
     for (index, content) in block.param_0.iter().enumerate() {
         let def = match &mkinfo.nodes[*content as usize] {
             Some(x) => x,
@@ -85,17 +80,6 @@ pub(super) fn create_mesh(
             let texture = mkinfo.textures[tile.texture.custom].cube_tex_coords[f];
 
             let mut add_vertex = |vertex: (usize, &([f32; 3], [f32; 2]))| {
-                /*println!(
-                    "{:?} {:?} {:?} {:?}",
-                    (vertex.1[0], vertex.1[1]),
-                    (rect[0].start, rect[1].start),
-                    (rect[0].end, rect[1].end),
-                    (
-                        vertex.1[0].lerp(rect[0].start, rect[0].end),
-                        vertex.1[1].lerp(rect[1].start, rect[1].end)
-                    )
-                );*/
-
                 buffer.vertices.push(Vertex {
                     pos: array(|i| pos[i] as f32 - 8.5 + vertex.1 .0[i]),
                     tex_coords: texture[vertex.0],
@@ -109,9 +93,6 @@ pub(super) fn create_mesh(
             }*/
         }
     }
-
-    *buffer_cap = buffer.cap();
-    (pos, buffer)
 }
 
 #[rustfmt::skip]

@@ -9,7 +9,7 @@ use mt_net::{MapBlock, NodeDef};
 use serde::{Deserialize, Serialize};
 use std::{
     collections::HashMap,
-    ops::DerefMut,
+    ops::{Deref, DerefMut},
     sync::{Arc, Mutex},
 };
 use wgpu::util::DeviceExt;
@@ -41,7 +41,8 @@ struct AtlasSlice {
     cube_tex_coords: [[[f32; 2]; 6]; 6],
 }
 
-struct MeshMakeInfo {
+// data shared with meshgen threads
+struct MeshgenInfo {
     // i optimized the shit out of these
     textures: Vec<AtlasSlice>,
     nodes: [Option<Box<NodeDef>>; u16::MAX as usize + 1],
@@ -54,8 +55,9 @@ pub struct MapRender {
     atlas: wgpu::BindGroup,
     model: wgpu::BindGroupLayout,
     blocks: HashMap<[i16; 3], BlockModel>,
-    mesh_make_info: Arc<MeshMakeInfo>,
-    mesh_data_buffer: Mutex<usize>,
+    meshgen_info: Arc<MeshgenInfo>,
+    meshgen_threads: Vec<std::thread::JoinHandle<()>>,
+    meshgen_channel: crossbeam_channel::Sender<(Point3<i16>, Box<MapBlock>)>,
     queue_consume: MeshQueue,
     queue_produce: Arc<Mutex<MeshQueue>>,
 }
@@ -191,15 +193,8 @@ impl MapRender {
     }
 
     pub fn add_block(&self, pos: Point3<i16>, block: Box<MapBlock>) {
-        let (pos, data) = create_mesh(
-            &mut self.mesh_data_buffer.lock().unwrap(),
-            self.mesh_make_info.clone(),
-            &Default::default(),
-            pos,
-            block,
-        );
-
-        self.queue_produce.lock().unwrap().insert(pos, data);
+        // FIXME: received mapblocks are propagated twice: network -> gfx -> meshgen
+        self.meshgen_channel.send((pos, block)).ok();
     }
 
     pub fn new(state: &mut State, media: &MediaMgr, mut nodes: HashMap<u16, NodeDef>) -> Self {
@@ -354,18 +349,44 @@ impl MapRender {
                 multiview: None,
             });
 
+        let meshgen_queue = Arc::new(Mutex::new(HashMap::new()));
+        let meshgen_info = Arc::new(MeshgenInfo {
+            nodes: std::array::from_fn(|i| nodes.get(&(i as u16)).cloned().map(Box::new)),
+            textures: atlas_slices,
+        });
+        let mut meshgen_threads = Vec::new();
+        let (meshgen_tx, meshgen_rx) = crossbeam_channel::unbounded();
+
+        // TODO: make this configurable
+        for _ in 0..2 {
+            let input = meshgen_rx.clone();
+            let output = meshgen_queue.clone();
+            let info = meshgen_info.clone();
+            let config = Default::default();
+
+            meshgen_threads.push(std::thread::spawn(move || {
+                let mut buffer_cap = 0;
+                let info = info.deref();
+
+                while let Ok((pos, block)) = input.recv() {
+                    let mut data = MeshData::new(buffer_cap);
+                    create_mesh(info, &config, pos, block, &mut data);
+                    buffer_cap = data.cap();
+                    output.lock().unwrap().insert(pos, data);
+                }
+            }));
+        }
+
         Self {
             pipeline,
-            mesh_make_info: Arc::new(MeshMakeInfo {
-                nodes: std::array::from_fn(|i| nodes.get(&(i as u16)).cloned().map(Box::new)),
-                textures: atlas_slices,
-            }),
-            mesh_data_buffer: Mutex::new(0),
             atlas: atlas_bind_group,
             model: model_bind_group_layout,
             blocks: HashMap::new(),
-            queue_consume: HashMap::new(),
-            queue_produce: Arc::new(Mutex::new(HashMap::new())),
+            meshgen_info,
+            meshgen_threads,
+            meshgen_channel: meshgen_tx,
+            queue_consume: HashMap::new(), // store this to keep capacity/allocations around
+            queue_produce: meshgen_queue,
         }
     }
 }
