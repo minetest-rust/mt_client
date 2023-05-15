@@ -122,7 +122,7 @@ pub async fn run(
             Close => *flow = ExitWithCode(0),
             NodeDefs(defs) => nodedefs = Some(defs),
             MapBlock(pos, blk) => {
-                if let Some(map) = &map {
+                if let Some(map) = &mut map {
                     map.add_block(pos, blk);
                 }
             }

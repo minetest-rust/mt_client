@@ -9,9 +9,10 @@ use mesh::{create_mesh, MeshData};
 use mt_net::{MapBlock, NodeDef};
 use serde::{Deserialize, Serialize};
 use std::{
-    collections::HashMap,
+    collections::hash_map::{Entry, HashMap},
     ops::{Deref, DerefMut},
     sync::{Arc, Mutex, RwLock},
+    time::Instant,
 };
 use wgpu::util::DeviceExt;
 
@@ -51,11 +52,20 @@ struct MeshgenInfo {
 
 type MeshQueue = HashMap<Point3<i16>, MeshData>;
 
+// to avoid excessive block mesh rebuilds, only build a mesh once all 6 neighbors are present
+// or a timeout of 100ms has elapsed
+struct DeferredBlock {
+    count: u8,
+    mask: [bool; 6],
+    time: Instant,
+}
+
 pub struct MapRender {
     pipeline: wgpu::RenderPipeline,
     atlas: wgpu::BindGroup,
     model: wgpu::BindGroupLayout,
     blocks: Arc<RwLock<HashMap<Point3<i16>, Arc<MapBlock>>>>,
+    blocks_defer: HashMap<Point3<i16>, DeferredBlock>,
     block_models: HashMap<Point3<i16>, BlockModel>,
     meshgen_info: Arc<MeshgenInfo>,
     meshgen_threads: Vec<std::thread::JoinHandle<()>>,
@@ -145,7 +155,7 @@ impl MapRender {
                 continue;
             }
 
-            let fpos = block_float_pos(Point3::from(pos));
+            let fpos = block_float_pos(pos);
             let one = Vector3::new(1.0, 1.0, 1.0);
             let aabb = Aabb3::new(fpos - one * 0.5, fpos + one * 15.5).transform(&state.view);
 
@@ -182,13 +192,21 @@ impl MapRender {
     }
 
     pub fn update(&mut self, state: &mut State) {
+        for (pos, _) in self
+            .blocks_defer
+            .drain_filter(|_, v| v.time.elapsed().as_millis() > 100)
+        {
+            self.meshgen_channel.send(pos).ok();
+        }
+
         std::mem::swap(
             self.queue_produce.lock().unwrap().deref_mut(),
             &mut self.queue_consume,
         );
+
         for (pos, data) in self.queue_consume.drain() {
             self.block_models.insert(
-                pos.into(),
+                pos,
                 BlockModel {
                     mesh: BlockMesh::new(state, &data.vertices),
                     mesh_blend: BlockMesh::new(state, &data.vertices_blend),
@@ -204,15 +222,58 @@ impl MapRender {
         }
     }
 
-    // TODO: move this to a map thread
-    pub fn add_block(&self, pos: Point3<i16>, block: Box<MapBlock>) {
+    pub fn add_block(&mut self, pos: Point3<i16>, block: Box<MapBlock>) {
         self.blocks.write().unwrap().insert(pos, Arc::new(*block));
 
-        self.meshgen_channel.send(pos).ok();
+        let blocks = self.blocks.read().unwrap();
 
-        // TODO: make this smarter (less rebuilds pls)
-        for off in FACE_DIR {
-            self.meshgen_channel.send(pos + Vector3::from(off)).ok();
+        let mut count = 6;
+        let mut mask = [false; 6];
+
+        for (f, off) in FACE_DIR.iter().enumerate() {
+            let npos = pos + Vector3::from(*off);
+
+            if let Entry::Occupied(mut nbor) = self.blocks_defer.entry(npos) {
+                let inner = nbor.get_mut();
+
+                let rf = f ^ 1;
+
+                if !inner.mask[rf] {
+                    inner.mask[rf] = true;
+                    inner.count -= 1;
+
+                    if inner.count == 0 {
+                        self.meshgen_channel.send(npos).ok();
+                        nbor.remove();
+                    }
+                }
+            } else if blocks.get(&npos).is_some() {
+                self.meshgen_channel.send(npos).ok();
+            } else {
+                continue;
+            }
+
+            mask[f] = true;
+            count -= 1;
+        }
+
+        if count == 0 {
+            self.meshgen_channel.send(pos).ok();
+        } else {
+            match self.blocks_defer.entry(pos) {
+                Entry::Occupied(mut x) => {
+                    let x = x.get_mut();
+                    x.mask = mask;
+                    x.count = count;
+                }
+                Entry::Vacant(x) => {
+                    x.insert(DeferredBlock {
+                        mask,
+                        count,
+                        time: Instant::now(),
+                    });
+                }
+            }
         }
     }
 
@@ -429,6 +490,7 @@ impl MapRender {
             atlas: atlas_bind_group,
             model: model_bind_group_layout,
             blocks,
+            blocks_defer: HashMap::new(),
             block_models: HashMap::new(),
             meshgen_info,
             meshgen_threads,
