@@ -1,4 +1,4 @@
-use super::{LeavesMode, MapRenderSettings, MeshgenInfo, Vertex, CUBE};
+use super::{LeavesMode, MapRenderSettings, MeshgenInfo, Vertex, CUBE, FACE_DIR};
 use cgmath::Point3;
 use mt_net::MapBlock;
 
@@ -25,7 +25,8 @@ pub(super) fn create_mesh(
     mkinfo: &MeshgenInfo,
     settings: &MapRenderSettings,
     pos: Point3<i16>,
-    block: Box<MapBlock>,
+    block: &MapBlock,
+    nbors: [Option<&MapBlock>; 6],
     buffer: &mut MeshData,
 ) {
     for (index, content) in block.param_0.iter().enumerate() {
@@ -64,15 +65,26 @@ pub(super) fn create_mesh(
         let pos: [i16; 3] = array(|i| ((index >> (4 * i)) & 0xf) as i16);
 
         for (f, face) in CUBE.iter().enumerate() {
-            let dir = FACE_DIR[f];
-            let npos: [i16; 3] = array(|i| dir[i] + pos[i]);
-            if npos.iter().all(|x| (0..16).contains(x)) {
-                let nindex = npos[0] | (npos[1] << 4) | (npos[2] << 8);
+            let c = [1, 1, 0, 0, 2, 2][f];
 
-                if let Some(ndef) = &mkinfo.nodes[block.param_0[nindex as usize] as usize] {
-                    if ndef.draw_type == DrawType::Cube {
-                        continue;
-                    }
+            let mut nblk = block;
+            let mut npos = pos;
+            npos[c] += FACE_DIR[f][c];
+
+            if !(0..16).contains(&npos[c]) {
+                nblk = match nbors[f].as_ref() {
+                    Some(x) => x,
+                    None => continue,
+                };
+
+                npos[c] = (npos[c] + 16) % 16;
+            }
+
+            let nidx = npos[0] | (npos[1] << 4) | (npos[2] << 8);
+
+            if let Some(ndef) = &mkinfo.nodes[nblk.param_0[nidx as usize] as usize] {
+                if ndef.draw_type == DrawType::Cube {
+                    continue;
                 }
             }
 
@@ -94,13 +106,3 @@ pub(super) fn create_mesh(
         }
     }
 }
-
-#[rustfmt::skip]
-const FACE_DIR: [[i16; 3]; 6] = [
-	[ 0,  1,  0],
-	[ 0, -1,  0],
-	[ 1,  0,  0],
-	[-1,  0,  0],
-	[ 0,  0,  1],
-	[ 0,  0, -1],
-];

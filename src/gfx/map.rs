@@ -11,7 +11,7 @@ use serde::{Deserialize, Serialize};
 use std::{
     collections::HashMap,
     ops::{Deref, DerefMut},
-    sync::{Arc, Mutex},
+    sync::{Arc, Mutex, RwLock},
 };
 use wgpu::util::DeviceExt;
 
@@ -55,10 +55,11 @@ pub struct MapRender {
     pipeline: wgpu::RenderPipeline,
     atlas: wgpu::BindGroup,
     model: wgpu::BindGroupLayout,
-    blocks: HashMap<[i16; 3], BlockModel>,
+    blocks: Arc<RwLock<HashMap<Point3<i16>, Arc<MapBlock>>>>,
+    block_models: HashMap<Point3<i16>, BlockModel>,
     meshgen_info: Arc<MeshgenInfo>,
     meshgen_threads: Vec<std::thread::JoinHandle<()>>,
-    meshgen_channel: crossbeam_channel::Sender<(Point3<i16>, Box<MapBlock>)>,
+    meshgen_channel: crossbeam_channel::Sender<Point3<i16>>,
     queue_consume: MeshQueue,
     queue_produce: Arc<Mutex<MeshQueue>>,
 }
@@ -139,7 +140,7 @@ impl MapRender {
 
         let mut blend = Vec::new();
 
-        for (index, (&pos, model)) in self.blocks.iter().enumerate() {
+        for (index, (&pos, model)) in self.block_models.iter().enumerate() {
             if model.mesh.is_none() && model.mesh_blend.is_none() {
                 continue;
             }
@@ -186,7 +187,7 @@ impl MapRender {
             &mut self.queue_consume,
         );
         for (pos, data) in self.queue_consume.drain() {
-            self.blocks.insert(
+            self.block_models.insert(
                 pos.into(),
                 BlockModel {
                     mesh: BlockMesh::new(state, &data.vertices),
@@ -203,9 +204,16 @@ impl MapRender {
         }
     }
 
+    // TODO: move this to a map thread
     pub fn add_block(&self, pos: Point3<i16>, block: Box<MapBlock>) {
-        // FIXME: received mapblocks are propagated twice: network -> gfx -> meshgen
-        self.meshgen_channel.send((pos, block)).ok();
+        self.blocks.write().unwrap().insert(pos, Arc::new(*block));
+
+        self.meshgen_channel.send(pos).ok();
+
+        // TODO: make this smarter (less rebuilds pls)
+        for off in FACE_DIR {
+            self.meshgen_channel.send(pos + Vector3::from(off)).ok();
+        }
     }
 
     pub fn new(state: &mut State, media: &MediaMgr, mut nodes: HashMap<u16, NodeDef>) -> Self {
@@ -368,20 +376,48 @@ impl MapRender {
         let mut meshgen_threads = Vec::new();
         let (meshgen_tx, meshgen_rx) = crossbeam_channel::unbounded();
 
+        let blocks = Arc::new(RwLock::new(HashMap::<Point3<i16>, Arc<MapBlock>>::new()));
+
         // TODO: make this configurable
         for _ in 0..2 {
             let input = meshgen_rx.clone();
             let output = meshgen_queue.clone();
             let info = meshgen_info.clone();
             let config = Default::default();
+            let blocks = blocks.clone();
 
             meshgen_threads.push(std::thread::spawn(move || {
                 let mut buffer_cap = 0;
                 let info = info.deref();
 
-                while let Ok((pos, block)) = input.recv() {
+                while let Ok(pos) = input.recv() {
                     let mut data = MeshData::new(buffer_cap);
-                    create_mesh(info, &config, pos, block, &mut data);
+
+                    let blocks = blocks.read().unwrap();
+
+                    let block = match blocks.get(&pos) {
+                        Some(x) => x.clone(),
+                        None => continue,
+                    };
+
+                    let nbors: [_; 6] = std::array::from_fn(|i| {
+                        blocks.get(&(pos + Vector3::from(FACE_DIR[i]))).cloned()
+                    });
+
+                    drop(blocks);
+
+                    create_mesh(
+                        info,
+                        &config,
+                        pos,
+                        block.deref(),
+                        std::array::from_fn(|i| nbors[i].as_deref()),
+                        &mut data,
+                    );
+
+                    drop(block);
+                    drop(nbors);
+
                     buffer_cap = data.cap();
                     output.lock().unwrap().insert(pos, data);
                 }
@@ -392,7 +428,8 @@ impl MapRender {
             pipeline,
             atlas: atlas_bind_group,
             model: model_bind_group_layout,
-            blocks: HashMap::new(),
+            blocks,
+            block_models: HashMap::new(),
             meshgen_info,
             meshgen_threads,
             meshgen_channel: meshgen_tx,
@@ -452,4 +489,14 @@ const CUBE: [[([f32; 3], [f32; 2]); 6]; 6] = [
 		([-0.5, -0.5, -0.5], [ 0.0,  0.0]),
 		([-0.5,  0.5, -0.5], [ 0.0,  1.0]),
 	],
+];
+
+#[rustfmt::skip]
+const FACE_DIR: [[i16; 3]; 6] = [
+	[ 0,  1,  0],
+	[ 0, -1,  0],
+	[ 1,  0,  0],
+	[-1,  0,  0],
+	[ 0,  0,  1],
+	[ 0,  0, -1],
 ];
