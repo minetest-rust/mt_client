@@ -1,5 +1,6 @@
 use super::util::MatrixUniform;
 use cgmath::{prelude::*, Deg, Matrix4, Rad};
+use collision::Frustum;
 use fps_camera::{FirstPerson, FirstPersonSettings};
 use std::time::Duration;
 
@@ -11,6 +12,7 @@ pub struct State {
     pub fov: Rad<f32>,
     pub view: Matrix4<f32>,
     pub proj: Matrix4<f32>,
+    pub frustum: Frustum<f32>,
     pub camera: FirstPerson,
     pub camera_uniform: MatrixUniform,
     pub camera_bind_group_layout: wgpu::BindGroupLayout,
@@ -100,6 +102,7 @@ impl State {
             fov: Deg(90.0).into(),
             proj: Matrix4::identity(),
             view: Matrix4::identity(),
+            frustum: Frustum::from_matrix4(Matrix4::identity()).unwrap(),
             camera,
             camera_uniform,
             camera_bind_group_layout,
@@ -174,6 +177,7 @@ impl State {
             0.1,
             100000.0,
         );
+        self.frustum = Frustum::from_matrix4(self.proj).unwrap();
     }
 
     pub fn update(&mut self, dt: Duration) {

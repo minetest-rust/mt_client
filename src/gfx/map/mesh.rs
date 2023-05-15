@@ -57,7 +57,7 @@ pub(super) fn create_mesh(
         }
 
         let light = match def.param1_type {
-            Param1Type::Light => block.param_1[index] as f32 / 15.0,
+            Param1Type::Light => block.param_1[index] as f32 / 15.0, // FIXME
             _ => 1.0,
         };
 
@@ -81,7 +81,7 @@ pub(super) fn create_mesh(
 
             let mut add_vertex = |vertex: (usize, &([f32; 3], [f32; 2]))| {
                 buffer.vertices.push(Vertex {
-                    pos: array(|i| pos[i] as f32 - 8.5 + vertex.1 .0[i]),
+                    pos: array(|i| pos[i] as f32 + vertex.1 .0[i]),
                     tex_coords: texture[vertex.0],
                     light,
                 });

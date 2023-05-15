@@ -1080,6 +1080,7 @@ version = "0.1.0"
 dependencies = [
  "bytemuck",
  "cgmath",
+ "collision",
  "crossbeam-channel",
  "fps-camera",
  "futures",

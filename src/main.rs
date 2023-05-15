@@ -22,7 +22,7 @@ pub enum NetEvent {
 
 fn main() {
     println!(include_str!("../assets/ascii-art.txt"));
-    println!("Early WIP. Expext breakage. Trans rights <3");
+    println!("Early WIP. Expect breakage. Trans rights <3");
 
     let (net_tx, net_rx) = mpsc::unbounded_channel();
     let event_loop = winit::event_loop::EventLoopBuilder::<GfxEvent>::with_user_event().build();

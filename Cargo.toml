@@ -12,6 +12,7 @@ opt-level = 3
 [dependencies]
 bytemuck = { version = "1.13.0", features = ["derive"] }
 cgmath = "0.17.0"
+collision = "0.20.1"
 crossbeam-channel = "0.5.8"
 fps-camera = "0.1.2"
 futures = { version = "0.3.26" }

@@ -4,6 +4,7 @@ mod mesh;
 use super::{media::MediaMgr, state::State, util::MatrixUniform};
 use atlas::create_atlas;
 use cgmath::{prelude::*, Matrix4, Point3, Vector3};
+use collision::{prelude::*, Aabb3, Relation};
 use mesh::{create_mesh, MeshData};
 use mt_net::{MapBlock, NodeDef};
 use serde::{Deserialize, Serialize};
@@ -119,7 +120,7 @@ struct BlockModel {
     transform: MatrixUniform,
 }
 
-fn block_float_pos(pos: Vector3<i16>) -> Vector3<f32> {
+fn block_float_pos(pos: Point3<i16>) -> Point3<f32> {
     pos.cast::<f32>().unwrap() * 16.0
 }
 
@@ -138,7 +139,19 @@ impl MapRender {
 
         let mut blend = Vec::new();
 
-        for (index, (pos, model)) in self.blocks.iter().enumerate() {
+        for (index, (&pos, model)) in self.blocks.iter().enumerate() {
+            if model.mesh.is_none() && model.mesh_blend.is_none() {
+                continue;
+            }
+
+            let fpos = block_float_pos(Point3::from(pos));
+            let one = Vector3::new(1.0, 1.0, 1.0);
+            let aabb = Aabb3::new(fpos - one * 0.5, fpos + one * 15.5).transform(&state.view);
+
+            if state.frustum.contains(&aabb) == Relation::Out {
+                continue;
+            }
+
             if let Some(mesh) = &model.mesh {
                 mesh.render(pass, &model.transform);
             }
@@ -146,9 +159,9 @@ impl MapRender {
             if let Some(mesh) = &model.mesh_blend {
                 blend.push(BlendEntry {
                     index,
-                    dist: (block_float_pos(Vector3::from(*pos))
-                        - Vector3::from(state.camera.position))
-                    .magnitude(),
+                    dist: (state.view * (fpos + one * 8.5).to_homogeneous())
+                        .truncate()
+                        .magnitude(),
                     mesh,
                     transform: &model.transform,
                 });
@@ -181,9 +194,7 @@ impl MapRender {
                     transform: MatrixUniform::new(
                         &state.device,
                         &self.model,
-                        Matrix4::from_translation(
-                            block_float_pos(pos.to_vec()) + Vector3::new(8.5, 8.5, 8.5),
-                        ),
+                        Matrix4::from_translation(block_float_pos(pos).to_vec()),
                         "mapblock",
                         false,
                     ),
