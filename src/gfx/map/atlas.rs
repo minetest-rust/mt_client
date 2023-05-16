@@ -1,5 +1,5 @@
 use super::{super::media::MediaMgr, AtlasSlice, CUBE};
-use mt_net::NodeDef;
+use mt_net::{NodeDef, TileAnim, TileDef};
 use rand::Rng;
 use std::collections::HashMap;
 
@@ -28,13 +28,14 @@ pub(super) fn create_atlas(
                 .map(|x| image::imageops::flip_vertical(&x))
         };
 
-        let mut make_texture = |texture: &str| {
-            texture
+        let mut make_texture = |tile: &TileDef| {
+            let string = &tile.texture.name;
+            let mut tex = string
                 .split('^')
                 .map(|part| match load_texture(part) {
                     Ok(v) => v,
                     Err(e) => {
-                        if !texture.is_empty() && !texture.contains('[') {
+                        if !string.is_empty() && !string.contains('[') {
                             eprintln!("{e}");
                         }
 
@@ -48,14 +49,31 @@ pub(super) fn create_atlas(
                     image::imageops::overlay(&mut base, &top, 0, 0);
                     base
                 })
-                .unwrap()
+                .unwrap();
+            match tile.animation {
+                TileAnim::VerticalFrame {
+                    n_frames: whatever, ..
+                } => (|| {
+                    if whatever.x == 0 || whatever.y == 0 {
+                        eprintln!("invalid animation for tile {}", string);
+                        return;
+                    }
+                    let tex_size = tex.dimensions();
+                    let frame_height =
+                        (tex_size.0 as f32 / whatever.x as f32 * whatever.y as f32) as u32;
+                    tex =
+                        image::imageops::crop(&mut tex, 0, 0, tex_size.0, frame_height).to_image();
+                })(),
+                _ => (),
+            };
+            tex
         };
 
         let mut id_map = HashMap::new();
 
         for tile in tiles {
             tile.texture.custom = *id_map.entry(tile.texture.name.clone()).or_insert_with(|| {
-                let img = make_texture(&tile.texture.name);
+                let img = make_texture(&tile);
 
                 let dimensions = img.dimensions();
                 let size = guillotiere::size2(dimensions.0 as i32, dimensions.1 as i32);
