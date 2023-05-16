@@ -8,9 +8,12 @@ use winit::{
     platform::run_return::EventLoopExtRunReturn,
 };
 
+mod camera;
+mod debug_menu;
+mod font;
+mod gpu;
 mod map;
 mod media;
-mod state;
 mod util;
 
 pub async fn run(
@@ -23,51 +26,80 @@ pub async fn run(
 
     window.set_cursor_visible(false);
 
-    let mut state = state::State::new(&window).await;
+    let mut gpu = gpu::Gpu::new(&window).await;
     let mut map: Option<map::MapRender> = None;
+    let mut font = font::Font::new(&gpu);
+    let mut debug_menu = debug_menu::DebugMenu::new();
     let mut media = media::MediaMgr::new();
+    let mut camera = camera::Camera::new(&gpu);
 
     let mut nodedefs = None;
-
     let mut last_frame = Instant::now();
-
+    let mut fps_counter = fps_counter::FPSCounter::new();
     let mut game_paused = false;
 
-    event_loop.run_return(move |event, _, flow| match event {
+    event_loop.run_return(|event, _, flow| match event {
         MainEventsCleared => window.request_redraw(),
         RedrawRequested(id) if id == window.id() => {
             let now = Instant::now();
             let dt = now - last_frame;
             last_frame = now;
 
-            state.update(dt);
+            debug_menu.fps = fps_counter.tick();
+            camera.update(&gpu, dt);
             if let Some(map) = &mut map {
-                map.update(&mut state);
+                map.update(&gpu);
             }
 
             net_events
                 .send(NetEvent::PlayerPos(
-                    state.camera.position.into(),
-                    Rad(state.camera.yaw).into(),
-                    Rad(state.camera.pitch).into(),
+                    camera.first_person.position.into(),
+                    Rad(camera.first_person.yaw).into(),
+                    Rad(camera.first_person.pitch).into(),
                 ))
                 .ok();
 
+            let mut render = || {
+                let size = (gpu.config.width as f32, gpu.config.height as f32);
+                let mut frame = gpu::Frame::new(&mut gpu)?;
+
+                {
+                    let mut pass = frame.pass();
+                    if let Some(map) = &mut map {
+                        map.render(&camera, &mut debug_menu, &mut pass);
+                    }
+                }
+
+                debug_menu.render(size, &camera, &mut font);
+                font.submit(&mut frame);
+
+                frame.finish();
+                font.cleanup();
+
+                Ok(())
+            };
+
             use wgpu::SurfaceError::*;
-            match state.render(&map) {
+            match render() {
                 Ok(_) => {}
-                Err(Lost) => state.configure_surface(),
+                Err(Lost) => gpu.configure_surface(),
                 Err(OutOfMemory) => *flow = ExitWithCode(0),
                 Err(err) => eprintln!("gfx error: {err:?}"),
             }
         }
         WindowEvent {
-            ref event,
+            event,
             window_id: id,
         } if id == window.id() => match event {
             CloseRequested => *flow = ExitWithCode(0),
-            Resized(size) => state.resize(*size),
-            ScaleFactorChanged { new_inner_size, .. } => state.resize(**new_inner_size),
+            Resized(size)
+            | ScaleFactorChanged {
+                new_inner_size: &mut size,
+                ..
+            } => {
+                gpu.resize(size);
+                camera.resize(size);
+            }
             KeyboardInput {
                 input:
                     winit::event::KeyboardInput {
@@ -80,9 +112,13 @@ pub async fn run(
                 use fps_camera::Actions;
                 use winit::event::{ElementState, VirtualKeyCode as Key};
 
-                if key == &Key::Escape && key_state == &ElementState::Pressed {
+                if key == Key::Escape && key_state == ElementState::Pressed {
                     game_paused = !game_paused;
                     window.set_cursor_visible(game_paused);
+                }
+
+                if key == Key::F3 && key_state == ElementState::Pressed {
+                    debug_menu.enabled = !debug_menu.enabled;
                 }
 
                 if !game_paused {
@@ -97,8 +133,8 @@ pub async fn run(
                     };
 
                     match key_state {
-                        ElementState::Pressed => state.camera.enable_actions(actions),
-                        ElementState::Released => state.camera.disable_action(actions),
+                        ElementState::Pressed => camera.first_person.enable_actions(actions),
+                        ElementState::Released => camera.first_person.disable_action(actions),
                     }
                 }
             }
@@ -109,11 +145,13 @@ pub async fn run(
             ..
         } => {
             if !game_paused {
-                state.camera.update_mouse(-delta.0 as f32, delta.1 as f32);
+                camera
+                    .first_person
+                    .update_mouse(-delta.0 as f32, delta.1 as f32);
                 window
                     .set_cursor_position(winit::dpi::PhysicalPosition::new(
-                        state.config.width / 2,
-                        state.config.height / 2,
+                        gpu.config.width / 2,
+                        gpu.config.height / 2,
                     ))
                     .ok();
             }
@@ -131,7 +169,8 @@ pub async fn run(
 
                 if finished {
                     map = Some(map::MapRender::new(
-                        &mut state,
+                        &mut gpu,
+                        &camera,
                         &media,
                         nodedefs.take().unwrap_or_default(),
                     ));
@@ -140,9 +179,9 @@ pub async fn run(
                 }
             }
             PlayerPos(pos, pitch, yaw) => {
-                state.camera.position = pos.into();
-                state.camera.pitch = Rad::<f32>::from(pitch).0;
-                state.camera.yaw = Rad::<f32>::from(yaw).0;
+                camera.first_person.position = pos.into();
+                camera.first_person.pitch = Rad::<f32>::from(pitch).0;
+                camera.first_person.yaw = Rad::<f32>::from(yaw).0;
             }
         },
         _ => {}

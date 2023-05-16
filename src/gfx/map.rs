@@ -1,7 +1,9 @@
 mod atlas;
 mod mesh;
 
-use super::{media::MediaMgr, state::State, util::MatrixUniform};
+use super::{
+    camera::Camera, debug_menu::DebugMenu, gpu::Gpu, media::MediaMgr, util::MatrixUniform,
+};
 use atlas::create_atlas;
 use cgmath::{prelude::*, Matrix4, Point3, Vector3};
 use collision::{prelude::*, Aabb3, Relation};
@@ -101,13 +103,13 @@ struct BlockMesh {
 }
 
 impl BlockMesh {
-    fn new(state: &State, vertices: &[Vertex]) -> Option<Self> {
+    fn new(gpu: &Gpu, vertices: &[Vertex]) -> Option<Self> {
         if vertices.is_empty() {
             return None;
         }
 
         Some(BlockMesh {
-            vertex_buffer: state
+            vertex_buffer: gpu
                 .device
                 .create_buffer_init(&wgpu::util::BufferInitDescriptor {
                     label: Some("mapblock.vertex_buffer"),
@@ -136,10 +138,15 @@ fn block_float_pos(pos: Point3<i16>) -> Point3<f32> {
 }
 
 impl MapRender {
-    pub fn render<'a>(&'a self, state: &'a State, pass: &mut wgpu::RenderPass<'a>) {
+    pub fn render<'a>(
+        &'a self,
+        camera: &'a Camera,
+        debug_menu: &mut DebugMenu,
+        pass: &mut wgpu::RenderPass<'a>,
+    ) {
         pass.set_pipeline(&self.pipeline);
         pass.set_bind_group(0, &self.atlas, &[]);
-        pass.set_bind_group(1, &state.camera_uniform.bind_group, &[]);
+        pass.set_bind_group(1, &camera.uniform.bind_group, &[]);
 
         struct BlendEntry<'a> {
             dist: f32,
@@ -157,9 +164,9 @@ impl MapRender {
 
             let fpos = block_float_pos(pos);
             let one = Vector3::new(1.0, 1.0, 1.0);
-            let aabb = Aabb3::new(fpos - one * 0.5, fpos + one * 15.5).transform(&state.view);
+            let aabb = Aabb3::new(fpos - one * 0.5, fpos + one * 15.5).transform(&camera.view);
 
-            if state.frustum.contains(&aabb) == Relation::Out {
+            if camera.frustum.contains(&aabb) == Relation::Out {
                 continue;
             }
 
@@ -170,7 +177,7 @@ impl MapRender {
             if let Some(mesh) = &model.mesh_blend {
                 blend.push(BlendEntry {
                     index,
-                    dist: (state.view * (fpos + one * 8.5).to_homogeneous())
+                    dist: (camera.view * (fpos + one * 8.5).to_homogeneous())
                         .truncate()
                         .magnitude(),
                     mesh,
@@ -191,7 +198,7 @@ impl MapRender {
         }
     }
 
-    pub fn update(&mut self, state: &mut State) {
+    pub fn update(&mut self, gpu: &Gpu) {
         for (pos, _) in self
             .blocks_defer
             .drain_filter(|_, v| v.time.elapsed().as_millis() > 100)
@@ -208,10 +215,10 @@ impl MapRender {
             self.block_models.insert(
                 pos,
                 BlockModel {
-                    mesh: BlockMesh::new(state, &data.vertices),
-                    mesh_blend: BlockMesh::new(state, &data.vertices_blend),
+                    mesh: BlockMesh::new(gpu, &data.vertices),
+                    mesh_blend: BlockMesh::new(gpu, &data.vertices_blend),
                     transform: MatrixUniform::new(
-                        &state.device,
+                        &gpu.device,
                         &self.model,
                         Matrix4::from_translation(block_float_pos(pos).to_vec()),
                         "mapblock",
@@ -277,7 +284,12 @@ impl MapRender {
         }
     }
 
-    pub fn new(state: &mut State, media: &MediaMgr, mut nodes: HashMap<u16, NodeDef>) -> Self {
+    pub fn new(
+        gpu: &mut Gpu,
+        camera: &Camera,
+        media: &MediaMgr,
+        mut nodes: HashMap<u16, NodeDef>,
+    ) -> Self {
         let (atlas_img, atlas_slices) = create_atlas(&mut nodes, media);
 
         let atlas_size = wgpu::Extent3d {
@@ -286,7 +298,7 @@ impl MapRender {
             depth_or_array_layers: 1,
         };
 
-        let atlas_texture = state.device.create_texture(&wgpu::TextureDescriptor {
+        let atlas_texture = gpu.device.create_texture(&wgpu::TextureDescriptor {
             size: atlas_size,
             mip_level_count: 1,
             sample_count: 1,
@@ -297,7 +309,7 @@ impl MapRender {
             view_formats: &[],
         });
 
-        state.queue.write_texture(
+        gpu.queue.write_texture(
             wgpu::ImageCopyTexture {
                 texture: &atlas_texture,
                 mip_level: 0,
@@ -315,7 +327,7 @@ impl MapRender {
 
         let atlas_view = atlas_texture.create_view(&wgpu::TextureViewDescriptor::default());
 
-        let atlas_sampler = state.device.create_sampler(&wgpu::SamplerDescriptor {
+        let atlas_sampler = gpu.device.create_sampler(&wgpu::SamplerDescriptor {
             address_mode_u: wgpu::AddressMode::ClampToEdge,
             address_mode_v: wgpu::AddressMode::ClampToEdge,
             address_mode_w: wgpu::AddressMode::ClampToEdge,
@@ -328,8 +340,7 @@ impl MapRender {
         });
 
         let atlas_bind_group_layout =
-            state
-                .device
+            gpu.device
                 .create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
                     entries: &[
                         wgpu::BindGroupLayoutEntry {
@@ -352,7 +363,7 @@ impl MapRender {
                     label: Some("atlas.bind_group_layout"),
                 });
 
-        let atlas_bind_group = state.device.create_bind_group(&wgpu::BindGroupDescriptor {
+        let atlas_bind_group = gpu.device.create_bind_group(&wgpu::BindGroupDescriptor {
             layout: &atlas_bind_group_layout,
             entries: &[
                 wgpu::BindGroupEntry {
@@ -367,26 +378,25 @@ impl MapRender {
             label: Some("atlas.bind_group"),
         });
 
-        let model_bind_group_layout = MatrixUniform::layout(&state.device, "mapblock");
+        let model_bind_group_layout = MatrixUniform::layout(&gpu.device, "mapblock");
 
-        let shader = state
+        let shader = gpu
             .device
             .create_shader_module(wgpu::include_wgsl!("../../assets/shaders/map.wgsl"));
 
-        let pipeline_layout =
-            state
-                .device
-                .create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-                    label: None,
-                    bind_group_layouts: &[
-                        &atlas_bind_group_layout,
-                        &model_bind_group_layout,
-                        &state.camera_bind_group_layout,
-                    ],
-                    push_constant_ranges: &[],
-                });
+        let pipeline_layout = gpu
+            .device
+            .create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+                label: None,
+                bind_group_layouts: &[
+                    &atlas_bind_group_layout,
+                    &model_bind_group_layout,
+                    &camera.layout,
+                ],
+                push_constant_ranges: &[],
+            });
 
-        let pipeline = state
+        let pipeline = gpu
             .device
             .create_render_pipeline(&wgpu::RenderPipelineDescriptor {
                 label: None,
@@ -400,15 +410,8 @@ impl MapRender {
                     module: &shader,
                     entry_point: "fs_main",
                     targets: &[Some(wgpu::ColorTargetState {
-                        format: state.config.format,
-                        blend: Some(wgpu::BlendState {
-                            color: wgpu::BlendComponent {
-                                src_factor: wgpu::BlendFactor::SrcAlpha,
-                                dst_factor: wgpu::BlendFactor::OneMinusSrcAlpha,
-                                operation: wgpu::BlendOperation::Add,
-                            },
-                            alpha: wgpu::BlendComponent::OVER,
-                        }),
+                        format: gpu.config.format,
+                        blend: Some(wgpu::BlendState::ALPHA_BLENDING),
                         write_mask: wgpu::ColorWrites::ALL,
                     })],
                 }),

@@ -15,6 +15,7 @@ cgmath = "0.17.0"
 collision = "0.20.1"
 crossbeam-channel = "0.5.8"
 fps-camera = "0.1.2"
+fps_counter = "2.0.0"
 futures = { version = "0.3.26" }
 guillotiere = "0.6.2"
 image = { version = "0.24.5", features = ["jpeg", "png", "bmp", "tga"], default-features = false }
@@ -29,4 +30,5 @@ srp = { git = "https://github.com/minetest-rust/PAKEs.git" }
 threadpool = "1.8.1"
 tokio = { version = "1.25.0", features = ["rt", "rt-multi-thread", "signal"] }
 wgpu = "0.15.1"
+wgpu_glyph = "0.19.0"
 winit = "0.28.1"

@@ -93,7 +93,7 @@ pub(super) fn create_mesh(
                 if let Some(ndef) = &mkinfo.nodes[ncontent as usize] {
                     if match draw_type {
                         DrawType::Cube => ndef.draw_type == DrawType::Cube,
-                        DrawType::Liquid => ncontent == content,
+                        DrawType::Liquid => ndef.draw_type == DrawType::Cube || ncontent == content,
                         _ => false,
                     } {
                         continue;
