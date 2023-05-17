@@ -71,7 +71,7 @@ pub(super) fn create_mesh(
             }
             DrawType::Flowing => {
                 let s = &def.special_tiles;
-                tiles = CowTileArray::Owned([&s[1], &s[1], &s[0], &s[0], &s[1], &s[1]]);
+                tiles = CowTileArray::Owned([&s[0], &s[0], &s[1], &s[1], &s[1], &s[1]]);
             }
             DrawType::None => continue,
             _ => {}
