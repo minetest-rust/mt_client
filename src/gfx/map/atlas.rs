@@ -52,15 +52,16 @@ pub(super) fn create_atlas(
                 .unwrap();
             match tile.animation {
                 TileAnim::VerticalFrame {
-                    n_frames: whatever, ..
+                    n_frames: frame_aspect,
+                    ..
                 } => (|| {
-                    if whatever.x == 0 || whatever.y == 0 {
+                    if frame_aspect.x == 0 || frame_aspect.y == 0 {
                         eprintln!("invalid animation for tile {}", string);
                         return;
                     }
                     let tex_size = tex.dimensions();
                     let frame_height =
-                        (tex_size.0 as f32 / whatever.x as f32 * whatever.y as f32) as u32;
+                        (tex_size.0 as f32 / frame_aspect.x as f32 * frame_aspect.y as f32) as u32;
                     tex =
                         image::imageops::crop(&mut tex, 0, 0, tex_size.0, frame_height).to_image();
                 })(),

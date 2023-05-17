@@ -50,6 +50,7 @@ struct MeshgenInfo {
     // i optimized the shit out of these
     textures: Vec<AtlasSlice>,
     nodes: [Option<Box<NodeDef>>; u16::MAX as usize + 1],
+    node_names_to_ids: HashMap<String, u16>,
 }
 
 type MeshQueue = HashMap<Point3<i16>, MeshData>;
@@ -439,10 +440,16 @@ impl MapRender {
                 multiview: None,
             });
 
+        let mut node_names_to_ids: HashMap<String, u16> = HashMap::new();
+        for (id, def) in &nodes {
+            node_names_to_ids.insert(def.name.clone(), *id);
+        }
+
         let meshgen_queue = Arc::new(Mutex::new(HashMap::new()));
         let meshgen_info = Arc::new(MeshgenInfo {
-            nodes: std::array::from_fn(|i| nodes.get(&(i as u16)).cloned().map(Box::new)),
             textures: atlas_slices,
+            nodes: std::array::from_fn(|i| nodes.get(&(i as u16)).cloned().map(Box::new)),
+            node_names_to_ids,
         });
         let mut meshgen_threads = Vec::new();
         let (meshgen_tx, meshgen_rx) = crossbeam_channel::unbounded();
