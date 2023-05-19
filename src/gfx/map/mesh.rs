@@ -1,6 +1,8 @@
+use std::ops;
+
 use super::{LeavesMode, MapRenderSettings, MeshgenInfo, Vertex, CUBE, FACE_DIR};
 use cgmath::Point3;
-use mt_net::MapBlock;
+use mt_net::{MapBlock, TileDef};
 
 #[derive(Clone)]
 pub(super) struct MeshData {
@@ -21,6 +23,21 @@ impl MeshData {
     }
 }
 
+enum CowTileArray<'a> {
+    Borrowed(&'a [TileDef; 6]),
+    Owned([&'a TileDef; 6]),
+}
+impl<'a> ops::Index<usize> for CowTileArray<'a> {
+    type Output = TileDef;
+
+    fn index(&self, index: usize) -> &Self::Output {
+        match self {
+            CowTileArray::Borrowed(tiles) => &tiles[index],
+            CowTileArray::Owned(tiles) => tiles[index],
+        }
+    }
+}
+
 pub(super) fn create_mesh(
     mkinfo: &MeshgenInfo,
     settings: &MapRenderSettings,
@@ -38,7 +55,7 @@ pub(super) fn create_mesh(
         use mt_net::{DrawType, Param1Type};
         use std::array::from_fn as array;
 
-        let mut tiles = &def.tiles;
+        let mut tiles = CowTileArray::Borrowed(&def.tiles);
         let mut draw_type = def.draw_type;
 
         match draw_type {
@@ -46,12 +63,15 @@ pub(super) fn create_mesh(
                 draw_type = match settings.leaves {
                     LeavesMode::Opaque => DrawType::Cube,
                     LeavesMode::Simple => {
-                        tiles = &def.special_tiles;
-
+                        tiles = CowTileArray::Borrowed(&def.special_tiles);
                         DrawType::GlassLike
                     }
                     LeavesMode::Fancy => DrawType::AllFaces,
                 };
+            }
+            DrawType::Flowing => {
+                let s = &def.special_tiles;
+                tiles = CowTileArray::Owned([&s[0], &s[0], &s[1], &s[1], &s[1], &s[1]]);
             }
             DrawType::None => continue,
             _ => {}
@@ -70,8 +90,17 @@ pub(super) fn create_mesh(
 
         let pos: [i16; 3] = array(|i| ((index >> (4 * i)) & 0xf) as i16);
 
+        let alt_content = match draw_type {
+            DrawType::Liquid => mkinfo.node_names_to_ids.get(&def.flowing_alt).copied(),
+            DrawType::Flowing => mkinfo.node_names_to_ids.get(&def.source_alt).copied(),
+            _ => None,
+        };
+
         for (f, face) in CUBE.iter().enumerate() {
-            if draw_type == DrawType::Cube || draw_type == DrawType::Liquid {
+            if draw_type == DrawType::Cube
+                || draw_type == DrawType::Liquid
+                || draw_type == DrawType::Flowing
+            {
                 let c = [1, 1, 0, 0, 2, 2][f];
 
                 let mut nblk = block;
@@ -93,7 +122,11 @@ pub(super) fn create_mesh(
                 if let Some(ndef) = &mkinfo.nodes[ncontent as usize] {
                     if match draw_type {
                         DrawType::Cube => ndef.draw_type == DrawType::Cube,
-                        DrawType::Liquid => ndef.draw_type == DrawType::Cube || ncontent == content,
+                        DrawType::Liquid | DrawType::Flowing => {
+                            ndef.draw_type == DrawType::Cube
+                                || ncontent == content
+                                || Some(ncontent) == alt_content
+                        }
                         _ => false,
                     } {
                         continue;
