@@ -148,16 +148,12 @@ impl MapRender {
         pass.set_bind_group(0, &self.atlas, &[]);
         pass.set_bind_group(1, &camera.uniform.bind_group, &[]);
 
-        struct BlendEntry<'a> {
-            dist: f32,
-            index: usize,
-            mesh: &'a BlockMesh,
-            transform: &'a MatrixUniform,
-        }
-
         let mut blend = Vec::new();
 
-        for (index, (&pos, model)) in self.block_models.iter().enumerate() {
+        debug_menu.blocks = self.block_models.len();
+        debug_menu.blocks_visible = 0;
+
+        for (&pos, model) in self.block_models.iter() {
             if model.mesh.is_none() && model.mesh_blend.is_none() {
                 continue;
             }
@@ -170,31 +166,27 @@ impl MapRender {
                 continue;
             }
 
+            debug_menu.blocks_visible += 1;
+
             if let Some(mesh) = &model.mesh {
                 mesh.render(pass, &model.transform);
             }
 
             if let Some(mesh) = &model.mesh_blend {
-                blend.push(BlendEntry {
-                    index,
-                    dist: (camera.view * (fpos + one * 8.5).to_homogeneous())
+                blend.push((
+                    (camera.view * (fpos + one * 8.5).to_homogeneous())
                         .truncate()
                         .magnitude(),
                     mesh,
-                    transform: &model.transform,
-                });
+                    &model.transform,
+                ));
             }
         }
 
-        blend.sort_unstable_by(|a, b| {
-            a.dist
-                .partial_cmp(&b.dist)
-                .unwrap_or(std::cmp::Ordering::Equal)
-                .then_with(|| a.index.cmp(&b.index))
-        });
+        blend.sort_unstable_by(|a, b| a.0.partial_cmp(&b.0).unwrap_or(std::cmp::Ordering::Equal));
 
         for entry in blend {
-            entry.mesh.render(pass, entry.transform);
+            entry.1.render(pass, entry.2);
         }
     }
 

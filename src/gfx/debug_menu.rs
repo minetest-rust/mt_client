@@ -1,19 +1,15 @@
 use super::{camera::Camera, font::Font};
 use wgpu_glyph::{Section, Text};
 
+#[derive(Default)]
 pub struct DebugMenu {
     pub enabled: bool,
     pub fps: usize,
+    pub blocks: usize,
+    pub blocks_visible: usize,
 }
 
 impl DebugMenu {
-    pub fn new() -> Self {
-        Self {
-            enabled: false,
-            fps: 0,
-        }
-    }
-
     pub fn render(&self, bounds: (f32, f32), camera: &Camera, font: &mut Font) {
         if !self.enabled {
             return;
@@ -48,5 +44,9 @@ impl DebugMenu {
         ));
         add_text(&format!("yaw: {:.1}°", (camera.rot.y.0 + 360.0) % 360.0));
         add_text(&format!("pitch: {:.1}°", camera.rot.z.0));
+        add_text(&format!(
+            "blocks visible: {}/{}",
+            self.blocks_visible, self.blocks,
+        ));
     }
 }

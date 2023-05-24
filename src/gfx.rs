@@ -29,7 +29,7 @@ pub async fn run(
     let mut gpu = gpu::Gpu::new(&window).await;
     let mut map: Option<map::MapRender> = None;
     let mut font = font::Font::new(&gpu);
-    let mut debug_menu = debug_menu::DebugMenu::new();
+    let mut debug_menu = debug_menu::DebugMenu::default();
     let mut media = media::MediaMgr::new();
     let mut camera = camera::Camera::new(&gpu);
 
