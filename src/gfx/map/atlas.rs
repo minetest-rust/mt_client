@@ -1,15 +1,15 @@
 use super::{super::media::MediaMgr, AtlasSlice, CUBE};
 use mt_net::NodeDef;
-use rand::Rng;
 use std::collections::HashMap;
 
 pub(super) fn create_atlas(
     nodes: &mut HashMap<u16, NodeDef>,
     media: &MediaMgr,
 ) -> (image::RgbaImage, Vec<AtlasSlice>) {
-    let mut rng = rand::thread_rng();
     let mut allocator = guillotiere::SimpleAtlasAllocator::new(guillotiere::size2(1, 1));
     let mut textures = Vec::new();
+
+    let mut id_map = HashMap::new();
 
     for node in nodes.values_mut() {
         let tiles = std::iter::empty()
@@ -17,45 +17,9 @@ pub(super) fn create_atlas(
             .chain(node.overlay_tiles.iter_mut())
             .chain(node.special_tiles.iter_mut());
 
-        let load_texture = |texture: &str| {
-            let payload = media
-                .get(texture)
-                .ok_or_else(|| format!("texture not found: {texture}"))?;
-
-            image::load_from_memory(payload)
-                .or_else(|_| image::load_from_memory_with_format(payload, image::ImageFormat::Tga))
-                .map_err(|e| format!("failed to load texture {texture}: {e}"))
-                .map(|x| image::imageops::flip_vertical(&x))
-        };
-
-        let mut make_texture = |texture: &str| {
-            texture
-                .split('^')
-                .map(|part| match load_texture(part) {
-                    Ok(v) => v,
-                    Err(e) => {
-                        if !texture.is_empty() && !texture.contains('[') {
-                            eprintln!("{e}");
-                        }
-
-                        let mut img = image::RgbImage::new(1, 1);
-                        rng.fill(&mut img.get_pixel_mut(0, 0).0);
-
-                        image::DynamicImage::from(img).to_rgba8()
-                    }
-                })
-                .reduce(|mut base, top| {
-                    image::imageops::overlay(&mut base, &top, 0, 0);
-                    base
-                })
-                .unwrap()
-        };
-
-        let mut id_map = HashMap::new();
-
         for tile in tiles {
             tile.texture.custom = *id_map.entry(tile.texture.name.clone()).or_insert_with(|| {
-                let img = make_texture(&tile.texture.name);
+                let img = media.texture_string(&tile.texture.name);
 
                 let dimensions = img.dimensions();
                 let size = guillotiere::size2(dimensions.0 as i32, dimensions.1 as i32);
