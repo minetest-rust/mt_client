@@ -67,12 +67,10 @@ impl Camera {
     }
 
     pub fn update(&mut self, gpu: &Gpu, dt: Duration) {
-        let dt = dt.as_secs_f32();
+        let sensitivity = Deg(0.05);
 
-        let sensitivity = dt * 2.0;
-
-        self.rot.y += Deg(sensitivity * self.input.mouse_x);
-        self.rot.z += Deg(sensitivity * self.input.mouse_y);
+        self.rot.y += sensitivity * self.input.mouse_x;
+        self.rot.z += sensitivity * self.input.mouse_y;
         self.rot.z.0 = self.rot.z.0.min(89.9).max(-89.9);
 
         self.input.mouse_x = 0.0;
@@ -119,7 +117,7 @@ impl Camera {
             }
 
             self.pos += self.speed
-                * dt
+                * dt.as_secs_f32()
                 * (vdir
                     + if hdir.is_zero() {
                         hdir
