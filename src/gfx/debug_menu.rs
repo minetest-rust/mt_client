@@ -1,5 +1,4 @@
 use super::{camera::Camera, font::Font};
-use cgmath::{Deg, Rad};
 use wgpu_glyph::{Section, Text};
 
 pub struct DebugMenu {
@@ -37,21 +36,17 @@ impl DebugMenu {
             offset += 20.0;
         };
 
-        let angle = |x| Deg::from(Rad(x)).0;
-
-        let pos = camera.first_person.position;
-
         add_text(&format!(
             "{} {}",
             env!("CARGO_PKG_NAME"),
             env!("CARGO_PKG_VERSION")
         ));
         add_text(&format!("{} FPS", self.fps));
-        add_text(&format!("({:.1}, {:.1}, {:.1})", pos[0], pos[1], pos[2]));
         add_text(&format!(
-            "yaw: {:.1}°",
-            (angle(camera.first_person.yaw) + 360.0) % 360.0
+            "({:.1}, {:.1}, {:.1})",
+            camera.pos.x, camera.pos.y, camera.pos.z
         ));
-        add_text(&format!("pitch: {:.1}°", angle(camera.first_person.pitch)));
+        add_text(&format!("yaw: {:.1}°", (camera.rot.y.0 + 360.0) % 360.0));
+        add_text(&format!("pitch: {:.1}°", camera.rot.z.0));
     }
 }

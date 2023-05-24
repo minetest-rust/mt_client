@@ -14,7 +14,6 @@ bytemuck = { version = "1.13.0", features = ["derive"] }
 cgmath = "0.17.0"
 collision = "0.20.1"
 crossbeam-channel = "0.5.8"
-fps-camera = "0.1.2"
 fps_counter = "2.0.0"
 futures = { version = "0.3.26" }
 guillotiere = "0.6.2"
@@ -27,8 +26,7 @@ serde = { version = "1.0.159", features = ["derive"] }
 serde_yaml = "0.9.21"
 sha2 = "0.10.6"
 srp = { git = "https://github.com/minetest-rust/PAKEs.git" }
-threadpool = "1.8.1"
 tokio = { version = "1.25.0", features = ["rt", "rt-multi-thread", "signal"] }
 wgpu = "0.15.1"
 wgpu_glyph = "0.19.0"
-winit = "0.28.1"
+winit = "0.28.6"

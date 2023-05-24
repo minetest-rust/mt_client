@@ -14,6 +14,7 @@ pub enum GfxEvent {
     NodeDefs(HashMap<u16, mt_net::NodeDef>),
     MapBlock(Point3<i16>, Box<mt_net::MapBlock>),
     PlayerPos(Point3<f32>, Deg<f32>, Deg<f32>),
+    MovementSpeed(f32),
 }
 
 #[derive(Debug, Clone)]

@@ -1,11 +1,11 @@
 use crate::{GfxEvent::*, NetEvent};
-use cgmath::Rad;
 use std::time::Instant;
 use tokio::sync::mpsc;
 use winit::{
     event::{DeviceEvent::*, Event::*, WindowEvent::*},
     event_loop::ControlFlow::ExitWithCode,
     platform::run_return::EventLoopExtRunReturn,
+    window::CursorGrabMode,
 };
 
 mod camera;
@@ -38,6 +38,22 @@ pub async fn run(
     let mut fps_counter = fps_counter::FPSCounter::new();
     let mut game_paused = false;
 
+    let update_cursor_mode = |game_paused| {
+        let modes: &[CursorGrabMode] = if game_paused {
+            &[CursorGrabMode::None]
+        } else {
+            &[CursorGrabMode::Confined, CursorGrabMode::Locked]
+        };
+
+        for mode in modes {
+            if window.set_cursor_grab(*mode).is_ok() {
+                return;
+            }
+        }
+    };
+
+    update_cursor_mode(game_paused);
+
     event_loop.run_return(|event, _, flow| match event {
         MainEventsCleared => window.request_redraw(),
         RedrawRequested(id) if id == window.id() => {
@@ -52,11 +68,7 @@ pub async fn run(
             }
 
             net_events
-                .send(NetEvent::PlayerPos(
-                    camera.first_person.position.into(),
-                    Rad(camera.first_person.yaw).into(),
-                    Rad(camera.first_person.pitch).into(),
-                ))
+                .send(NetEvent::PlayerPos(camera.pos, camera.rot.y, camera.rot.z))
                 .ok();
 
             let mut render = || {
@@ -91,6 +103,7 @@ pub async fn run(
             event,
             window_id: id,
         } if id == window.id() => match event {
+            Focused(false) => camera.input = Default::default(),
             CloseRequested => *flow = ExitWithCode(0),
             Resized(size)
             | ScaleFactorChanged {
@@ -109,12 +122,20 @@ pub async fn run(
                     },
                 ..
             } => {
-                use fps_camera::Actions;
                 use winit::event::{ElementState, VirtualKeyCode as Key};
 
                 if key == Key::Escape && key_state == ElementState::Pressed {
                     game_paused = !game_paused;
                     window.set_cursor_visible(game_paused);
+                    update_cursor_mode(game_paused);
+
+                    if game_paused {
+                        camera.input = Default::default();
+                    }
+                }
+
+                if game_paused {
+                    return;
                 }
 
                 if key == Key::F3 && key_state == ElementState::Pressed {
@@ -122,20 +143,15 @@ pub async fn run(
                 }
 
                 if !game_paused {
-                    let actions = match key {
-                        Key::W => Actions::MOVE_FORWARD,
-                        Key::A => Actions::STRAFE_LEFT,
-                        Key::S => Actions::MOVE_BACKWARD,
-                        Key::D => Actions::STRAFE_RIGHT,
-                        Key::Space => Actions::FLY_UP,
-                        Key::LShift => Actions::FLY_DOWN,
-                        _ => Actions::empty(),
-                    };
-
-                    match key_state {
-                        ElementState::Pressed => camera.first_person.enable_actions(actions),
-                        ElementState::Released => camera.first_person.disable_action(actions),
-                    }
+                    *(match key {
+                        Key::W => &mut camera.input.forward,
+                        Key::A => &mut camera.input.left,
+                        Key::S => &mut camera.input.backward,
+                        Key::D => &mut camera.input.right,
+                        Key::Space => &mut camera.input.jump,
+                        Key::LShift => &mut camera.input.sneak,
+                        _ => return,
+                    }) = key_state == ElementState::Pressed;
                 }
             }
             _ => {}
@@ -145,9 +161,9 @@ pub async fn run(
             ..
         } => {
             if !game_paused {
-                camera
-                    .first_person
-                    .update_mouse(-delta.0 as f32, delta.1 as f32);
+                camera.input.mouse_x += delta.0 as f32;
+                camera.input.mouse_y += delta.1 as f32;
+
                 window
                     .set_cursor_position(winit::dpi::PhysicalPosition::new(
                         gpu.config.width / 2,
@@ -179,9 +195,12 @@ pub async fn run(
                 }
             }
             PlayerPos(pos, pitch, yaw) => {
-                camera.first_person.position = pos.into();
-                camera.first_person.pitch = Rad::<f32>::from(pitch).0;
-                camera.first_person.yaw = Rad::<f32>::from(yaw).0;
+                camera.pos = pos;
+                camera.rot.y = yaw;
+                camera.rot.z = pitch;
+            }
+            MovementSpeed(speed) => {
+                camera.speed = speed;
             }
         },
         _ => {}

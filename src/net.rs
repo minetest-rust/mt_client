@@ -245,6 +245,11 @@ impl Conn {
             ChatMsg { text, .. } => {
                 println!("{text}");
             }
+            Movement { walk_speed, .. } => {
+                self.events
+                    .send_event(GfxEvent::MovementSpeed(walk_speed))
+                    .ok();
+            }
             _ => {}
         }
     }
