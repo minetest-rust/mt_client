@@ -24,9 +24,8 @@ rand = "0.8.5"
 rust-embed = "6.4.2"
 serde = { version = "1.0.159", features = ["derive"] }
 serde_yaml = "0.9.21"
-sha2 = "0.10.6"
-srp = { git = "https://github.com/minetest-rust/PAKEs.git" }
 tokio = { version = "1.25.0", features = ["rt", "rt-multi-thread", "signal"] }
 wgpu = "0.15.1"
 wgpu_glyph = "0.19.0"
 winit = "0.28.6"
+mt_auth = { git = "https://github.com/minetest-rust/mt_auth" }
