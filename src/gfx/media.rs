@@ -41,6 +41,13 @@ impl MediaMgr {
             .map(Vec::as_slice)
     }
 
+    pub fn rand_img() -> image::RgbaImage {
+        let mut img = image::RgbImage::new(1, 1);
+        rand::thread_rng().fill(&mut img.get_pixel_mut(0, 0).0);
+
+        image::DynamicImage::from(img).to_rgba8()
+    }
+
     pub fn texture(&self, texture: &str) -> image::RgbaImage {
         match match self.get(texture) {
             Some(payload) => image::load_from_memory(payload)
@@ -53,12 +60,7 @@ impl MediaMgr {
             }
         } {
             Some(v) => image::imageops::flip_vertical(&v),
-            None => {
-                let mut img = image::RgbImage::new(1, 1);
-                rand::thread_rng().fill(&mut img.get_pixel_mut(0, 0).0);
-
-                image::DynamicImage::from(img).to_rgba8()
-            }
+            None => Self::rand_img(),
         }
     }
 
@@ -83,6 +85,6 @@ impl MediaMgr {
 
                 base
             })
-            .unwrap()
+            .unwrap_or_else(Self::rand_img)
     }
 }
